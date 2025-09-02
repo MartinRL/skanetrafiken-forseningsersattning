@@ -1,0 +1,48 @@
+/* Container for the delay button */
+.delay-button-container {
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px;
+  margin-top: 10px;
+  border-top: 1px solid #e0e0e0;
+}
+
+/* Style for the delay compensation button */
+.delay-compensation-btn {
+  background-color: #ff6b6b;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.delay-compensation-btn:hover {
+  background-color: #ff5252;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  transform: translateY(-1px);
+}
+
+.delay-compensation-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Ensure button doesn't interfere with existing layout */
+.st-journey--is-canceled .delay-button-container {
+  background-color: rgba(255, 255, 255, 0.9);
+  margin: 0 -10px -10px -10px;
+  border-radius: 0 0 4px 4px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .delay-compensation-btn {
+    font-size: 12px;
+    padding: 6px 12px;
+  }
+}
