@@ -101,9 +101,7 @@ function addDelayButton(journeyElement, delayMinutes) {
     e.stopPropagation();
     e.preventDefault();
     
-    // Here you can add the logic for what happens when the button is clicked
-    // For example, navigate to a compensation form or show a modal
-    alert(`Ersättningsansökan för ${delayMinutes} minuters försening\n\nHär kan du implementera logik för att:\n- Öppna ersättningsformulär\n- Spara information om resan\n- Navigera till ersättningssidan`);
+    // TODO: Add button behavior
   });
   
   // Find a good place to insert the button
