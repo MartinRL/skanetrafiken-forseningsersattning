@@ -3,7 +3,7 @@
   "name": "Skånetrafiken Förseningsersättning",
   "version": "1.0.1",
   "description": "Automatisk detektion av inställda resor och förseningsersättning för Skånetrafiken",
-  "permissions": [],
+  "permissions": ["activeTab"],
   "host_permissions": [
     "https://www.skanetrafiken.se/*"
   ],
