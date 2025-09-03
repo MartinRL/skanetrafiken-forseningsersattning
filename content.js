@@ -37,6 +37,32 @@ function extractTime(text, pattern) {
   return match ? match[1] : null;
 }
 
+// Function to extract from station from journey text
+function extractFromStation(text) {
+  // Look for patterns like "Från: Kastrup" or extract station names
+  const fromMatch = text.match(/Från[:\s]+([^,\n]+)/i);
+  if (fromMatch) return fromMatch[1].trim();
+  
+  // Fallback: look for common patterns in journey text
+  const stationMatch = text.match(/(\w+(?:\s+\w+)*)\s*→/);
+  if (stationMatch) return stationMatch[1].trim();
+  
+  return 'Unknown';
+}
+
+// Function to extract to station from journey text  
+function extractToStation(text) {
+  // Look for patterns like "Till: Malmö" or extract destination
+  const toMatch = text.match(/Till[:\s]+([^,\n]+)/i);
+  if (toMatch) return toMatch[1].trim();
+  
+  // Fallback: look for arrow pattern
+  const stationMatch = text.match(/→\s*(\w+(?:\s+\w+)*)/);
+  if (stationMatch) return stationMatch[1].trim();
+  
+  return 'Unknown';
+}
+
 // Function to find and process cancelled rides
 function processCancelledRides() {
   // Find all journey containers - try multiple selectors to find journey elements
@@ -205,24 +231,37 @@ function processCancelledRides() {
       
       // Add button if delay is 20 minutes or more
       if (delay >= 20) {
-        addDelayButton(journey, delay);
+        // Extract station information from journey text
+        const journeyInfo = {
+          departureTime: departureTime,
+          delay: delay,
+          fromStation: extractFromStation(journeyText),
+          toStation: extractToStation(journeyText)
+        };
+        
+        addDelayButton(journey, journeyInfo);
       }
     }
   });
 }
 
 // Function to add delay compensation button
-function addDelayButton(journeyElement, delayMinutes) {
+function addDelayButton(journeyElement, journeyInfo) {
   const button = document.createElement('button');
   button.className = 'delay-compensation-btn';
-  button.textContent = `Ersättning (${delayMinutes} min försening)`;
-  button.title = `Klicka för att ansöka om ersättning för ${delayMinutes} minuters försening`;
+  button.textContent = `Ersättning (${journeyInfo.delay} min försening)`;
+  button.title = `Klicka för att ansöka om ersättning för ${journeyInfo.delay} minuters försening`;
   
   button.addEventListener('click', (e) => {
     e.stopPropagation();
     e.preventDefault();
     
-    // TODO: Add button behavior
+    // Cache journey information for ersättning flow
+    console.log('Caching journey info:', journeyInfo);
+    window.cachedJourneyInfo = journeyInfo;
+    
+    // Navigate to ersättning application page
+    navigateToErsattningPage();
   });
   
   // Find a good place to insert the button
@@ -233,6 +272,17 @@ function addDelayButton(journeyElement, delayMinutes) {
   
   // Insert at the end of the journey element
   journeyElement.appendChild(buttonContainer);
+}
+
+// Function to navigate to ersättning application page
+function navigateToErsattningPage() {
+  console.log('Navigating to ersättning application page...');
+  console.log('Cached journey info:', window.cachedJourneyInfo);
+  
+  // Navigate directly to the ersättning application page
+  const ersattningUrl = 'https://www.skanetrafiken.se/kundservice/forseningsersattning/ansokan/';
+  console.log('Opening:', ersattningUrl);
+  window.location.href = ersattningUrl;
 }
 
 // Run the script when the page loads
