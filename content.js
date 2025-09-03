@@ -1,3 +1,5 @@
+console.log('🚀 Skånetrafiken extension loaded');
+
 // Function to parse time string (HH:MM format)
 function parseTime(timeStr) {
   const [hours, minutes] = timeStr.split(':').map(Number);
@@ -11,9 +13,19 @@ function calculateDelay(cancelledArrival, nextArrival) {
   
   let delay = nextMinutes - cancelledMinutes;
   
-  // Handle day boundary (if next arrival is on the next day)
-  if (delay < 0) {
+  // Only add 24 hours if delay is significantly negative (more than 12 hours)
+  // This prevents small negative differences from being treated as next-day
+  if (delay < -12 * 60) {
     delay += 24 * 60;
+  } else if (delay < 0) {
+    // For small negative values, something is wrong - return 0
+    console.log(`WARNING: Small negative delay ${delay} min. Setting to 0.`);
+    delay = 0;
+  }
+  
+  // Sanity check: delays over 12 hours are probably wrong
+  if (delay > 12 * 60) {
+    console.log(`WARNING: Unrealistic delay ${delay} min. Might be a calculation error.`);
   }
   
   return delay;
@@ -27,33 +39,92 @@ function extractTime(text, pattern) {
 
 // Function to find and process cancelled rides
 function processCancelledRides() {
-  // Find all journey containers
-  const allJourneys = document.querySelectorAll('[class*="st-journey"]');
+  // Find all journey containers - try multiple selectors to find journey elements
+  let allJourneys = document.querySelectorAll('main button');
+  
+  // If no journeys found with main button, try alternative selectors
+  if (allJourneys.length === 0) {
+    console.log('No journeys found with "main button", trying alternative selectors...');
+    allJourneys = document.querySelectorAll('button[class*="journey"]');
+  }
+  
+  if (allJourneys.length === 0) {
+    allJourneys = document.querySelectorAll('[class*="journey"]');
+  }
+  
+  if (allJourneys.length === 0) {
+    allJourneys = document.querySelectorAll('button');
+    console.log('Fallback: found', allJourneys.length, 'buttons total');
+  }
+  
+  console.log(`Processing ${allJourneys.length} journeys`);
   
   allJourneys.forEach((journey, index) => {
+    // Skip buttons that are not journey items (like "Se tidigare resor", "Sök resa", etc.)
+    const journeyText = journey.textContent;
+    
+    // Debug: Log every journey we're checking
+    console.log(`Journey ${index}:`, journeyText.substring(0, 150));
+    
+    if (!journeyText.includes('Avgick:') && !journeyText.includes('Avgår:') && 
+        !journeyText.includes('Har passerat') && !journeyText.includes('Inställd')) {
+      console.log(`Skipping journey ${index} - not a journey item`);
+      return;
+    }
+    
     // Check if this journey is cancelled
-    const isCancelled = journey.classList.contains('st-journey--is-canceled') || 
-                       journey.textContent.includes('Inställd');
+    const isCancelled = journeyText.includes('Inställd');
+    console.log(`Journey ${index} cancelled: ${isCancelled}`);
     
     if (isCancelled) {
-      // Skip if button already exists
-      if (journey.querySelector('.delay-compensation-btn')) {
+      console.log(`Found cancelled journey ${index}:`, journey.textContent.substring(0, 100));
+      
+      // Skip if this is just a simple "Inställd" text without time info
+      if (journeyText.trim() === 'Inställd' || journeyText.length < 20) {
+        console.log('Skipping simple cancelled text element');
         return;
       }
       
+      // Skip if button already exists or journey already processed
+      if (journey.querySelector('.delay-compensation-btn') || 
+          journey.querySelector('.delay-button-container') ||
+          journey.hasAttribute('data-delay-processed')) {
+        return;
+      }
+      
+      // Mark this journey as being processed to prevent duplicates
+      journey.setAttribute('data-delay-processed', 'true');
+      
       // Extract cancelled departure time and calculate arrival
-      const journeyText = journey.textContent;
+      // journeyText already defined above
       
-      // Look for departure time first
-      let departureTimeMatch = journeyText.match(/Avg\u00e5r:\s*(\d{2}:\d{2})/);
+      // Look for departure time first (handle both "Avgår:" and "Avgick:")
+      let departureTimeMatch = journeyText.match(/Avg(?:år|ick):\s*(\d{2}:\d{2})/);
       
-      // Also check for standalone time pattern (like "13:14")
+      // For cancelled journeys, look for the pattern after "--:--" 
       if (!departureTimeMatch) {
-        departureTimeMatch = journeyText.match(/\b(\d{2}:\d{2})\b/);
+        departureTimeMatch = journeyText.match(/--:--(\d{2}:\d{2})/);
+      }
+      
+      // Also check for standalone time pattern (like "13:14") - get the first valid time
+      if (!departureTimeMatch) {
+        const timeMatches = journeyText.match(/\b(\d{2}:\d{2})\b/g);
+        if (timeMatches && timeMatches.length > 0) {
+          // Find the first time that's not "--:--" 
+          for (const timeMatch of timeMatches) {
+            if (timeMatch !== '--:--') {
+              departureTimeMatch = [null, timeMatch];
+              break;
+            }
+          }
+        }
       }
       
       if (!departureTimeMatch) {
-        console.log('Could not find departure time for cancelled journey:', journeyText);
+        console.log('Could not find departure time for cancelled journey:', journeyText.substring(0, 200));
+        console.log('Full journey text:', journeyText);
+        const allTimes = journeyText.match(/\d{2}:\d{2}/g);
+        console.log('All times found in text:', allTimes);
         return;
       }
       
@@ -75,22 +146,40 @@ function processCancelledRides() {
       
       for (let i = index + 1; i < allJourneys.length; i++) {
         const nextJourneyCandidate = allJourneys[i];
-        const isNextCancelled = nextJourneyCandidate.classList.contains('st-journey--is-canceled') || 
-                                nextJourneyCandidate.textContent.includes('Inställd');
+        const nextJourneyText = nextJourneyCandidate.textContent;
+        
+        // Skip buttons that are not journey items
+        if (!nextJourneyText.includes('Avgick:') && !nextJourneyText.includes('Avgår:') && 
+            !nextJourneyText.includes('Har passerat') && !nextJourneyText.includes('Inställd')) {
+          continue;
+        }
+        
+        const isNextCancelled = nextJourneyText.includes('Inställd') ||
+                                nextJourneyText.includes('tid saknas');
         
         if (!isNextCancelled) {
-          const nextJourneyText = nextJourneyCandidate.textContent;
-          // Try multiple patterns to find the time in next journey
+          console.log(`Checking next journey candidate: ${nextJourneyText.substring(0, 100)}`);
+          // For delay calculation, we want the ARRIVAL time of next journey
+          // Look specifically for arrival time first, then departure as fallback
           let nextTimeMatch = nextJourneyText.match(/Ankom(?:mer)?:\s*(\d{2}:\d{2})/);
           if (!nextTimeMatch) {
-            nextTimeMatch = nextJourneyText.match(/Avgår:\s*(\d{2}:\d{2})/);
-          }
-          if (!nextTimeMatch) {
-            // Look for standalone time pattern
-            nextTimeMatch = nextJourneyText.match(/\b(\d{2}:\d{2})\b/);
+            // If no arrival time, look for departure and calculate arrival (+13 min)
+            const depMatch = nextJourneyText.match(/Avg(?:år|ick):\s*(\d{2}:\d{2})/);
+            if (depMatch) {
+              const depTime = depMatch[1];
+              const [hours, minutes] = depTime.split(':').map(Number);
+              const depMinutes = hours * 60 + minutes;
+              const arrMinutes = depMinutes + 13; // Add 13 minutes travel time
+              const arrHours = Math.floor((arrMinutes % (24 * 60)) / 60);
+              const arrMins = arrMinutes % 60;
+              const calculatedArrival = `${arrHours.toString().padStart(2, '0')}:${arrMins.toString().padStart(2, '0')}`;
+              nextTimeMatch = [null, calculatedArrival];
+              console.log(`Calculated next arrival from departure ${depTime} -> ${calculatedArrival}`);
+            }
           }
           
           if (nextTimeMatch) {
+            console.log(`Found next journey time: ${nextTimeMatch[1]} from text: ${nextJourneyText.substring(0, 100)}`);
             nextJourney = nextJourneyCandidate;
             nextTime = nextTimeMatch[1];
             break;
@@ -105,7 +194,14 @@ function processCancelledRides() {
       
       // Calculate delay
       const delay = calculateDelay(cancelledArrival, nextTime);
-      console.log(`Cancelled departure: ${departureTime}, Calculated arrival: ${cancelledArrival}, Next time: ${nextTime}, Delay: ${delay} minutes`);
+      console.log(`DELAY CALCULATION DEBUG:`);
+      console.log(`- Cancelled departure: ${departureTime}`);
+      console.log(`- Cancelled expected arrival: ${cancelledArrival}`);
+      console.log(`- Next journey time: ${nextTime}`);
+      console.log(`- Calculated delay: ${delay} minutes`);
+      console.log(`- Cancelled arrival minutes: ${parseTime(cancelledArrival)}`);
+      console.log(`- Next time minutes: ${parseTime(nextTime)}`);
+      console.log(`- Raw difference: ${parseTime(nextTime) - parseTime(cancelledArrival)} minutes`);
       
       // Add button if delay is 20 minutes or more
       if (delay >= 20) {
@@ -141,30 +237,52 @@ function addDelayButton(journeyElement, delayMinutes) {
 
 // Run the script when the page loads
 function init() {
+  console.log('🎯 Extension init() called');
   // Process rides immediately
   processCancelledRides();
   
   // Set up a MutationObserver to handle dynamic content
   const observer = new MutationObserver((mutations) => {
-    // Check if any journey elements were added or modified
-    const hasJourneyChanges = mutations.some(mutation => {
-      return Array.from(mutation.addedNodes).some(node => {
-        return node.nodeType === 1 && (
-          node.matches?.('[class*="st-journey"]') ||
-          node.querySelector?.('[class*="st-journey"]')
-        );
-      });
+    let shouldProcess = false;
+    
+    mutations.forEach(mutation => {
+      // Check for added nodes with journey elements
+      if (mutation.addedNodes.length > 0) {
+        const hasJourneyNodes = Array.from(mutation.addedNodes).some(node => {
+          return node.nodeType === 1 && (
+            node.matches?.('[class*="st-journey"]') ||
+            node.querySelector?.('[class*="st-journey"]')
+          );
+        });
+        if (hasJourneyNodes) shouldProcess = true;
+      }
+      
+      // Check for attribute changes on journey elements
+      if (mutation.type === 'attributes' && 
+          mutation.target.matches?.('[class*="st-journey"]')) {
+        shouldProcess = true;
+      }
+      
+      // Check for text content changes that might affect journey detection
+      if (mutation.type === 'characterData' || 
+          (mutation.type === 'childList' && mutation.target.matches?.('[class*="st-journey"]'))) {
+        shouldProcess = true;
+      }
     });
     
-    if (hasJourneyChanges) {
-      processCancelledRides();
+    if (shouldProcess) {
+      // Add a small delay to ensure DOM is fully updated
+      setTimeout(processCancelledRides, 100);
     }
   });
   
   // Start observing the document body for changes
   observer.observe(document.body, {
     childList: true,
-    subtree: true
+    subtree: true,
+    attributes: true,
+    characterData: true,
+    attributeFilter: ['class'] // Only watch class changes
   });
 }
 
