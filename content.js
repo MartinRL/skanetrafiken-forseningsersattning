@@ -63,6 +63,39 @@ function extractToStation(text) {
   return 'Unknown';
 }
 
+// Function to extract journey date from page context
+function extractJourneyDate() {
+  // Look for date headers like "Idag, onsdag 3 september 2025" or "Imorgon, torsdag 4 september 2025"
+  const dateHeaders = document.querySelectorAll('main');
+  if (dateHeaders.length > 0) {
+    const mainText = dateHeaders[0].textContent;
+    
+    // Match patterns like "Idag, onsdag 3 september 2025" or "onsdag 3 september 2025"
+    const dateMatch = mainText.match(/(Idag,\s*)?(\w+)\s+(\d{1,2})\s+(\w+)\s+(\d{4})/i);
+    if (dateMatch) {
+      const [, prefix, dayName, day, month, year] = dateMatch;
+      return `${year}-${getMonthNumber(month)}-${day.padStart(2, '0')}`;
+    }
+  }
+  
+  // Fallback to today's date
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = (today.getMonth() + 1).toString().padStart(2, '0');
+  const day = today.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+// Helper function to convert Swedish month names to numbers
+function getMonthNumber(monthName) {
+  const months = {
+    'januari': '01', 'februari': '02', 'mars': '03', 'april': '04',
+    'maj': '05', 'juni': '06', 'juli': '07', 'augusti': '08',
+    'september': '09', 'oktober': '10', 'november': '11', 'december': '12'
+  };
+  return months[monthName.toLowerCase()] || '01';
+}
+
 // Function to find and process cancelled rides
 function processCancelledRides() {
   // Find all journey containers - try multiple selectors to find journey elements
@@ -231,12 +264,13 @@ function processCancelledRides() {
       
       // Add button if delay is 20 minutes or more
       if (delay >= 20) {
-        // Extract station information from journey text
+        // Extract station information and date from journey text
         const journeyInfo = {
           departureTime: departureTime,
           delay: delay,
           fromStation: extractFromStation(journeyText),
-          toStation: extractToStation(journeyText)
+          toStation: extractToStation(journeyText),
+          date: extractJourneyDate()
         };
         
         addDelayButton(journey, journeyInfo);
@@ -274,10 +308,33 @@ function addDelayButton(journeyElement, journeyInfo) {
   journeyElement.appendChild(buttonContainer);
 }
 
+// Function to load credentials from extension storage
+async function loadCredentials() {
+  try {
+    // In a real extension, credentials would be loaded securely
+    // For now, we'll use the cached credentials from our credentials.json
+    const credentials = {
+      'email': 'martinrosenlidholm@gmail.com',
+      'ticket-id': 'E4H825D',
+      'phone-number': '0707318625',
+      'person-number': 'REDACTED'
+    };
+    window.cachedCredentials = credentials;
+    console.log('🔑 Credentials loaded:', Object.keys(credentials));
+    return credentials;
+  } catch (error) {
+    console.error('❌ Error loading credentials:', error);
+    return null;
+  }
+}
+
 // Function to navigate to ersättning application page
 function navigateToErsattningPage() {
   console.log('Navigating to ersättning application page...');
   console.log('Cached journey info:', window.cachedJourneyInfo);
+  
+  // Load credentials for form filling
+  loadCredentials();
   
   // Navigate directly to the ersättning application page
   const ersattningUrl = 'https://www.skanetrafiken.se/kundservice/forseningsersattning/ansokan/';
@@ -285,10 +342,89 @@ function navigateToErsattningPage() {
   window.location.href = ersattningUrl;
 }
 
+// Function to auto-fill ersättning application form step 1
+function fillErsattningStep1() {
+  console.log('🔧 Auto-filling ersättning step 1...');
+  
+  if (!window.cachedJourneyInfo) {
+    console.log('❌ No cached journey info found');
+    return false;
+  }
+  
+  const journeyInfo = window.cachedJourneyInfo;
+  console.log('📋 Using cached journey info:', journeyInfo);
+  
+  try {
+    // Step 1: Set the correct date in the dropdown
+    const dateSelect = document.querySelector('select[name="TravelDateStep1"]');
+    if (dateSelect && journeyInfo.date) {
+      console.log(`📅 Setting date to: ${journeyInfo.date}`);
+      dateSelect.value = journeyInfo.date;
+      dateSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    
+    // Step 2: Click "Appbiljett Skånetrafiken" checkbox
+    const appBiljettCheckbox = document.querySelector('input[type="checkbox"]');
+    if (appBiljettCheckbox) {
+      console.log('📱 Selecting Appbiljett Skånetrafiken');
+      appBiljettCheckbox.checked = true;
+      appBiljettCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    
+    // Wait a moment for any dynamic content to load after selecting ticket type
+    setTimeout(() => {
+      // Step 3: Fill in phone number
+      const phoneInput = document.querySelector('input[name*="Mobilnummer"], input[id*="phone"], input[placeholder*="mobil"]');
+      if (phoneInput && window.cachedCredentials && window.cachedCredentials['phone-number']) {
+        console.log('📞 Filling phone number');
+        phoneInput.value = window.cachedCredentials['phone-number'];
+        phoneInput.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      
+      // Step 4: Fill in ticket ID
+      const ticketIdInput = document.querySelector('input[name*="BiljettID"], input[id*="ticket"], input[placeholder*="biljett"]');
+      if (ticketIdInput && window.cachedCredentials && window.cachedCredentials['ticket-id']) {
+        console.log('🎫 Filling ticket ID');
+        ticketIdInput.value = window.cachedCredentials['ticket-id'];
+        ticketIdInput.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      
+      // Step 5: Click continue button
+      setTimeout(() => {
+        const continueBtn = document.querySelector('button.continue, button[class*="continue"]');
+        if (continueBtn) {
+          console.log('➡️ Clicking continue to step 2');
+          continueBtn.click();
+        }
+      }, 500);
+      
+    }, 1000);
+    
+    return true;
+  } catch (error) {
+    console.error('❌ Error filling ersättning form:', error);
+    return false;
+  }
+}
+
 // Run the script when the page loads
 function init() {
   console.log('🎯 Extension init() called');
-  // Process rides immediately
+  
+  // Check if we're on the ersättning application page
+  if (window.location.href.includes('/kundservice/forseningsersattning/ansokan/')) {
+    console.log('🎯 Detected ersättning application page');
+    // Load credentials and try to fill the form
+    loadCredentials().then(() => {
+      // Wait a moment for the page to fully load
+      setTimeout(() => {
+        fillErsattningStep1();
+      }, 1500);
+    });
+    return; // Don't process cancelled rides on this page
+  }
+  
+  // Process rides immediately on journey search pages
   processCancelledRides();
   
   // Set up a MutationObserver to handle dynamic content
