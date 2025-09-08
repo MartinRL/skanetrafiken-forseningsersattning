@@ -379,47 +379,152 @@ function navigateToErsattningPage() {
 function fillErsattningStep1() {
   console.log('🔧 Auto-filling ersättning step 1...');
   
-  if (!window.cachedJourneyInfo) {
-    console.log('❌ No cached journey info found');
-    return false;
+  const journeyInfo = window.cachedJourneyInfo;
+  if (journeyInfo) {
+    console.log('📋 Using cached journey info:', journeyInfo);
+  } else {
+    console.log('⚠️ No cached journey info found, will still try to fill basic fields');
   }
   
-  const journeyInfo = window.cachedJourneyInfo;
-  console.log('📋 Using cached journey info:', journeyInfo);
-  
   try {
-    // Step 1: Set the correct date in the dropdown
-    const dateSelect = document.querySelector('select[name="TravelDateStep1"]');
-    if (dateSelect && journeyInfo.date) {
-      console.log(`📅 Setting date to: ${journeyInfo.date}`);
-      dateSelect.value = journeyInfo.date;
-      dateSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    // Step 1: Set the correct date in the dropdown (try multiple selectors)
+    const dateSelect = document.querySelector('select[name="TravelDateStep1"]') ||
+                      document.querySelector('select') ||
+                      document.querySelector('combobox');
+    
+    if (dateSelect) {
+      if (journeyInfo && journeyInfo.date) {
+        console.log(`📅 Setting date to: ${journeyInfo.date}`);
+        dateSelect.value = journeyInfo.date;
+        dateSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      } else {
+        console.log('📅 Date selector found but no journey date available, keeping current selection');
+      }
+    } else {
+      console.log('❌ Could not find date selector');
     }
     
     // Step 2: Click "Appbiljett Skånetrafiken" checkbox
-    const appBiljettCheckbox = document.querySelector('input[type="checkbox"]');
+    console.log('🔍 Looking for Appbiljett Skånetrafiken checkbox...');
+    const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+    console.log(`Found ${checkboxes.length} checkboxes on page`);
+    
+    let appBiljettCheckbox = null;
+    
+    // Look through all checkboxes to find the Appbiljett one
+    for (const checkbox of checkboxes) {
+      // Check text content around the checkbox
+      const parent = checkbox.parentElement;
+      const nextText = checkbox.nextSibling?.textContent?.trim() || '';
+      const parentText = parent?.textContent?.trim() || '';
+      
+      console.log(`Checkbox text: "${nextText}" or parent: "${parentText}"`);
+      
+      if (nextText.toLowerCase().includes('appbiljett') || 
+          parentText.toLowerCase().includes('appbiljett')) {
+        appBiljettCheckbox = checkbox;
+        console.log('✅ Found Appbiljett checkbox!');
+        break;
+      }
+    }
+    
     if (appBiljettCheckbox) {
-      console.log('📱 Selecting Appbiljett Skånetrafiken');
-      appBiljettCheckbox.checked = true;
-      appBiljettCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
+      console.log('📱 Selecting Appbiljett Skånetrafiken checkbox');
+      if (!appBiljettCheckbox.checked) {
+        appBiljettCheckbox.click();
+        console.log('✅ Checkbox clicked');
+      } else {
+        console.log('✅ Checkbox already checked');
+      }
+    } else {
+      console.log('❌ Could not find Appbiljett Skånetrafiken checkbox');
     }
     
     // Wait a moment for any dynamic content to load after selecting ticket type
     setTimeout(() => {
-      // Step 3: Fill in phone number
-      const phoneInput = document.querySelector('input[name*="Mobilnummer"], input[id*="phone"], input[placeholder*="mobil"]');
-      if (phoneInput && window.cachedCredentials && window.cachedCredentials['phone-number']) {
-        console.log('📞 Filling phone number');
-        phoneInput.value = window.cachedCredentials['phone-number'];
-        phoneInput.dispatchEvent(new Event('input', { bubbles: true }));
+      // Step 3: Fill in phone number (try multiple selectors)
+      let phoneInput = document.querySelector('input[name*="Mobilnummer"]') || 
+                      document.querySelector('input[id*="phone"]') || 
+                      document.querySelector('input[placeholder*="mobil"]') ||
+                      document.querySelector('input[type="tel"]') ||
+                      document.querySelector('label:contains("Mobilnummer") + input, label:contains("Mobilnummer") ~ input');
+      
+      // If still not found, try finding by proximity to "Mobilnummer" text
+      if (!phoneInput) {
+        const labels = document.querySelectorAll('label, span, div');
+        for (const label of labels) {
+          if (label.textContent.toLowerCase().includes('mobilnummer')) {
+            phoneInput = label.nextElementSibling?.querySelector('input') || 
+                        label.parentElement?.querySelector('input') ||
+                        label.closest('div')?.querySelector('input[type="text"], input[type="tel"]');
+            if (phoneInput) break;
+          }
+        }
       }
       
-      // Step 4: Fill in ticket ID
-      const ticketIdInput = document.querySelector('input[name*="BiljettID"], input[id*="ticket"], input[placeholder*="biljett"]');
+      if (phoneInput && window.cachedCredentials && window.cachedCredentials['phone-number']) {
+        console.log('📞 Filling phone number in field:', phoneInput);
+        phoneInput.value = window.cachedCredentials['phone-number'];
+        phoneInput.dispatchEvent(new Event('input', { bubbles: true }));
+        phoneInput.dispatchEvent(new Event('change', { bubbles: true }));
+      } else {
+        console.log('❌ Could not find phone input field');
+      }
+      
+      // Step 4: Fill in ticket ID (try multiple selectors)
+      // First try to find the visible textbox specifically (not hidden inputs)
+      let ticketIdInput = null;
+      
+      // Look for textboxes near "BiljettID" text that are visible
+      const allTextInputs = document.querySelectorAll('input[type="text"], input:not([type])');
+      console.log(`🔍 Found ${allTextInputs.length} text inputs on page`);
+      
+      for (const input of allTextInputs) {
+        // Skip hidden inputs
+        if (input.type === 'hidden' || input.style.display === 'none' || input.offsetParent === null) {
+          continue;
+        }
+        
+        // Check if input is near "BiljettID" text
+        const parent = input.parentElement;
+        const grandParent = parent?.parentElement;
+        const previousSibling = input.previousElementSibling;
+        
+        // Check various elements around the input for "BiljettID" text
+        const textSources = [
+          parent?.textContent || '',
+          grandParent?.textContent || '',
+          previousSibling?.textContent || '',
+          input.placeholder || '',
+          input.name || '',
+          input.id || ''
+        ];
+        
+        for (const text of textSources) {
+          if (text.toLowerCase().includes('biljettid') || text.toLowerCase().includes('biljettnummer')) {
+            console.log(`🎫 Found BiljettID input near text: "${text.substring(0, 50)}" - Input: ${input.outerHTML.substring(0, 100)}`);
+            ticketIdInput = input;
+            break;
+          }
+        }
+        
+        if (ticketIdInput) break;
+      }
+      
+      // Fallback to original selectors if proximity search didn't work
+      if (!ticketIdInput) {
+        ticketIdInput = document.querySelector('input[name*="BiljettID"]') ||
+                       document.querySelector('input[name*="biljettid"]') ||
+                       document.querySelector('input[placeholder*="biljett"]');
+      }
+      
       if (ticketIdInput && window.cachedCredentials && window.cachedCredentials['ticket-id']) {
-        console.log('🎫 Filling ticket ID');
+        console.log('🎫 Filling ticket ID in field:', ticketIdInput);
         ticketIdInput.value = window.cachedCredentials['ticket-id'];
         ticketIdInput.dispatchEvent(new Event('input', { bubbles: true }));
+        ticketIdInput.dispatchEvent(new Event('change', { bubbles: true }));
+      } else {
+        console.log('❌ Could not find ticket ID input field');
       }
       
       // Step 5: Click continue button
@@ -447,12 +552,34 @@ function init() {
   // Check if we're on the ersättning application page
   if (window.location.href.includes('/kundservice/forseningsersattning/ansokan/')) {
     console.log('🎯 Detected ersättning application page');
-    // Load credentials and try to fill the form
+    
+    // Add a manual trigger button for testing
+    const debugButton = document.createElement('button');
+    debugButton.textContent = '🔧 Test Auto-Fill';
+    debugButton.style.cssText = 'position: fixed; top: 10px; right: 10px; z-index: 9999; background: #ff6b6b; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer;';
+    debugButton.onclick = () => {
+      console.log('🔧 Manual auto-fill triggered');
+      loadCredentials().then(() => fillErsattningStep1());
+    };
+    document.body.appendChild(debugButton);
+    
+    // Load credentials and try to fill the form multiple times to ensure it works
     loadCredentials().then(() => {
-      // Wait a moment for the page to fully load
-      setTimeout(() => {
-        fillErsattningStep1();
-      }, 1500);
+      // Try multiple times with different delays
+      setTimeout(() => fillErsattningStep1(), 500);
+      setTimeout(() => fillErsattningStep1(), 1500);
+      setTimeout(() => fillErsattningStep1(), 3000);
+      
+      // Also set up a MutationObserver to try again when DOM changes
+      const formObserver = new MutationObserver(() => {
+        setTimeout(() => fillErsattningStep1(), 100);
+      });
+      
+      formObserver.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true
+      });
     });
     return; // Don't process cancelled rides on this page
   }
