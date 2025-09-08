@@ -446,8 +446,7 @@ function fillErsattningStep1() {
       let phoneInput = document.querySelector('input[name*="Mobilnummer"]') || 
                       document.querySelector('input[id*="phone"]') || 
                       document.querySelector('input[placeholder*="mobil"]') ||
-                      document.querySelector('input[type="tel"]') ||
-                      document.querySelector('label:contains("Mobilnummer") + input, label:contains("Mobilnummer") ~ input');
+                      document.querySelector('input[type="tel"]');
       
       // If still not found, try finding by proximity to "Mobilnummer" text
       if (!phoneInput) {
@@ -545,6 +544,162 @@ function fillErsattningStep1() {
   }
 }
 
+// Function to auto-fill ersättning application form step 2 (journey search)
+function fillErsattningStep2() {
+  console.log('🔧 Auto-filling ersättning step 2...');
+  
+  const journeyInfo = window.cachedJourneyInfo;
+  if (!journeyInfo) {
+    console.log('⚠️ No cached journey info found for step 2');
+    return false;
+  }
+  
+  console.log('📋 Using cached journey info:', journeyInfo);
+  
+  try {
+    // Step 1: Set delay duration dropdown
+    if (journeyInfo.delay) {
+      console.log(`⏱️ Setting delay duration: ${journeyInfo.delay} minutes`);
+      const delaySelect = document.querySelector('select') || document.querySelector('[role="combobox"]');
+      
+      if (delaySelect) {
+        // Map delay minutes to the correct option
+        let delayOption = '20-39 min'; // default
+        if (journeyInfo.delay >= 120) {
+          delayOption = 'mer än två timmar';
+        } else if (journeyInfo.delay >= 60) {
+          delayOption = '60-119 min';
+        } else if (journeyInfo.delay >= 40) {
+          delayOption = '40-59 min';
+        }
+        
+        console.log(`⏱️ Selecting delay option: ${delayOption}`);
+        const options = delaySelect.querySelectorAll('option');
+        for (const option of options) {
+          if (option.textContent.trim() === delayOption) {
+            delaySelect.value = option.value;
+            delaySelect.selectedIndex = option.index;
+            delaySelect.dispatchEvent(new Event('change', { bubbles: true }));
+            break;
+          }
+        }
+      } else {
+        console.log('❌ Could not find delay duration dropdown');
+      }
+    }
+    
+    // Step 2: Fill "Från" (From) station
+    if (journeyInfo.fromStation) {
+      console.log(`🚉 Setting from station: ${journeyInfo.fromStation}`);
+      const fromInputs = document.querySelectorAll('input, select');
+      
+      for (const input of fromInputs) {
+        const label = input.previousElementSibling?.textContent || 
+                     input.parentElement?.textContent || 
+                     input.getAttribute('aria-label') || '';
+        
+        if (label.toLowerCase().includes('från')) {
+          console.log('📍 Found "Från" field:', input);
+          input.value = journeyInfo.fromStation;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          break;
+        }
+      }
+    }
+    
+    // Step 3: Fill "Till" (To) station  
+    if (journeyInfo.toStation) {
+      console.log(`🚉 Setting to station: ${journeyInfo.toStation}`);
+      const toInputs = document.querySelectorAll('input, select');
+      
+      for (const input of toInputs) {
+        const label = input.previousElementSibling?.textContent || 
+                     input.parentElement?.textContent || 
+                     input.getAttribute('aria-label') || '';
+        
+        if (label.toLowerCase().includes('till')) {
+          console.log('📍 Found "Till" field:', input);
+          input.value = journeyInfo.toStation;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          break;
+        }
+      }
+    }
+    
+    // Step 4: Set departure time
+    if (journeyInfo.departureTime) {
+      console.log(`🕐 Setting departure time: ${journeyInfo.departureTime}`);
+      const [hours, minutes] = journeyInfo.departureTime.split(':');
+      
+      // Find hour selector
+      const hourSelects = document.querySelectorAll('select');
+      for (const select of hourSelects) {
+        const label = select.previousElementSibling?.textContent || 
+                     select.parentElement?.textContent || '';
+        
+        if (label.toLowerCase().includes('timmar') || label.toLowerCase().includes('hour')) {
+          console.log('🕐 Found hour selector:', select);
+          const hourOptions = select.querySelectorAll('option');
+          for (const option of hourOptions) {
+            if (option.value === hours.padStart(2, '0') || option.textContent.trim() === hours.padStart(2, '0')) {
+              select.value = option.value;
+              select.selectedIndex = option.index;
+              select.dispatchEvent(new Event('change', { bubbles: true }));
+              break;
+            }
+          }
+          break;
+        }
+      }
+      
+      // Find minute selector
+      for (const select of hourSelects) {
+        const label = select.previousElementSibling?.textContent || 
+                     select.parentElement?.textContent || '';
+        
+        if (label.toLowerCase().includes('minut') || label.toLowerCase().includes('minute')) {
+          console.log('🕐 Found minute selector:', select);
+          const minuteOptions = select.querySelectorAll('option');
+          // Find closest 5-minute interval
+          const roundedMinutes = Math.round(parseInt(minutes) / 5) * 5;
+          const minuteStr = roundedMinutes.toString().padStart(2, '0');
+          
+          for (const option of minuteOptions) {
+            if (option.value === minuteStr || option.textContent.trim() === minuteStr) {
+              select.value = option.value;
+              select.selectedIndex = option.index;
+              select.dispatchEvent(new Event('change', { bubbles: true }));
+              break;
+            }
+          }
+          break;
+        }
+      }
+    }
+    
+    // Step 5: Click "Sök resa" button after a delay
+    setTimeout(() => {
+      const searchBtn = document.querySelector('button[onclick*="sök"], button:contains("Sök resa")') ||
+                       Array.from(document.querySelectorAll('button')).find(btn => 
+                         btn.textContent.toLowerCase().includes('sök resa'));
+      
+      if (searchBtn) {
+        console.log('🔍 Clicking "Sök resa" button');
+        searchBtn.click();
+      } else {
+        console.log('❌ Could not find "Sök resa" button');
+      }
+    }, 1000);
+    
+    return true;
+  } catch (error) {
+    console.error('❌ Error filling ersättning step 2:', error);
+    return false;
+  }
+}
+
 // Run the script when the page loads
 function init() {
   console.log('🎯 Extension init() called');
@@ -553,26 +708,69 @@ function init() {
   if (window.location.href.includes('/kundservice/forseningsersattning/ansokan/')) {
     console.log('🎯 Detected ersättning application page');
     
+    // Detect which step we're on
+    const pageTitle = document.title || '';
+    const stepText = document.querySelector('h1')?.textContent || '';
+    const isStep1 = pageTitle.includes('steg 1') || stepText.includes('steg 1');
+    const isStep2 = pageTitle.includes('steg 2') || stepText.includes('steg 2');
+    
+    console.log(`🎯 Detected step: ${isStep1 ? 'Step 1' : isStep2 ? 'Step 2' : 'Unknown'}`);
+    
     // Add a manual trigger button for testing
     const debugButton = document.createElement('button');
     debugButton.textContent = '🔧 Test Auto-Fill';
     debugButton.style.cssText = 'position: fixed; top: 10px; right: 10px; z-index: 9999; background: #ff6b6b; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer;';
     debugButton.onclick = () => {
       console.log('🔧 Manual auto-fill triggered');
-      loadCredentials().then(() => fillErsattningStep1());
+      if (isStep1) {
+        loadCredentials().then(() => fillErsattningStep1());
+      } else if (isStep2) {
+        fillErsattningStep2();
+      } else {
+        console.log('⚠️ Unknown step, trying step 1');
+        loadCredentials().then(() => fillErsattningStep1());
+      }
     };
     document.body.appendChild(debugButton);
     
-    // Load credentials and try to fill the form multiple times to ensure it works
-    loadCredentials().then(() => {
-      // Try multiple times with different delays
-      setTimeout(() => fillErsattningStep1(), 500);
-      setTimeout(() => fillErsattningStep1(), 1500);
-      setTimeout(() => fillErsattningStep1(), 3000);
+    // Auto-fill based on step
+    if (isStep1) {
+      // Load credentials and try to fill step 1 form
+      loadCredentials().then(() => {
+        setTimeout(() => fillErsattningStep1(), 500);
+        setTimeout(() => fillErsattningStep1(), 1500);
+        setTimeout(() => fillErsattningStep1(), 3000);
+        
+        const formObserver = new MutationObserver(() => {
+          setTimeout(() => fillErsattningStep1(), 100);
+        });
+        
+        formObserver.observe(document.body, {
+          childList: true,
+          subtree: true,
+          attributes: true
+        });
+      });
+    } else if (isStep2) {
+      // Set up test journey info if none exists
+      if (!window.cachedJourneyInfo) {
+        console.log('🧪 Setting up test journey info for step 2');
+        window.cachedJourneyInfo = {
+          departureTime: '14:19',
+          delay: 25,
+          fromStation: 'Kastrup',
+          toStation: 'Malmö Hyllie',
+          date: '2025-09-08'
+        };
+      }
       
-      // Also set up a MutationObserver to try again when DOM changes
+      // Auto-fill step 2 journey search
+      setTimeout(() => fillErsattningStep2(), 500);
+      setTimeout(() => fillErsattningStep2(), 1500);
+      setTimeout(() => fillErsattningStep2(), 3000);
+      
       const formObserver = new MutationObserver(() => {
-        setTimeout(() => fillErsattningStep1(), 100);
+        setTimeout(() => fillErsattningStep2(), 100);
       });
       
       formObserver.observe(document.body, {
@@ -580,7 +778,8 @@ function init() {
         subtree: true,
         attributes: true
       });
-    });
+    }
+    
     return; // Don't process cancelled rides on this page
   }
   
