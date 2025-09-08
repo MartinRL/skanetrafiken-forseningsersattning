@@ -96,6 +96,24 @@ function getMonthNumber(monthName) {
   return months[monthName.toLowerCase()] || '01';
 }
 
+// Function to check if a journey is cancelled by checking for visual indicators
+function checkIfJourneyCancelled(journey, journeyText) {
+  // First check for explicit "Inställd" in button text
+  if (journeyText.includes('Inställd')) {
+    console.log('Journey explicitly marked as Inställd');
+    return true;
+  }
+  
+  // Check if journey has warning annotation (red triangle) - assume these are cancellations
+  // This is a heuristic approach - journeys with red warning triangles are likely cancelled
+  if (journeyText.includes('Den här resan har en anmärkning')) {
+    console.log('Journey has red warning triangle - assuming cancelled');
+    return true;
+  }
+  
+  return false;
+}
+
 // Function to find and process cancelled rides
 function processCancelledRides() {
   // Find all journey containers - try multiple selectors to find journey elements
@@ -118,7 +136,11 @@ function processCancelledRides() {
   
   console.log(`Processing ${allJourneys.length} journeys`);
   
-  allJourneys.forEach((journey, index) => {
+  // Store cancelled journeys info for processing
+  const cancelledJourneys = [];
+  
+  for (let index = 0; index < allJourneys.length; index++) {
+    const journey = allJourneys[index];
     // Skip buttons that are not journey items (like "Se tidigare resor", "Sök resa", etc.)
     const journeyText = journey.textContent;
     
@@ -126,13 +148,14 @@ function processCancelledRides() {
     console.log(`Journey ${index}:`, journeyText.substring(0, 150));
     
     if (!journeyText.includes('Avgick:') && !journeyText.includes('Avgår:') && 
-        !journeyText.includes('Har passerat') && !journeyText.includes('Inställd')) {
+        !journeyText.includes('Har passerat') && !journeyText.includes('Inställd') &&
+        !journeyText.includes('Den här resan har en anmärkning')) {
       console.log(`Skipping journey ${index} - not a journey item`);
-      return;
+      continue;
     }
     
     // Check if this journey is cancelled
-    const isCancelled = journeyText.includes('Inställd');
+    const isCancelled = checkIfJourneyCancelled(journey, journeyText);
     console.log(`Journey ${index} cancelled: ${isCancelled}`);
     
     if (isCancelled) {
@@ -141,142 +164,152 @@ function processCancelledRides() {
       // Skip if this is just a simple "Inställd" text without time info
       if (journeyText.trim() === 'Inställd' || journeyText.length < 20) {
         console.log('Skipping simple cancelled text element');
-        return;
+        continue;
       }
       
       // Skip if button already exists or journey already processed
       if (journey.querySelector('.delay-compensation-btn') || 
           journey.querySelector('.delay-button-container') ||
           journey.hasAttribute('data-delay-processed')) {
-        return;
+        continue;
       }
       
       // Mark this journey as being processed to prevent duplicates
       journey.setAttribute('data-delay-processed', 'true');
       
-      // Extract cancelled departure time and calculate arrival
-      // journeyText already defined above
-      
-      // Look for departure time first (handle both "Avgår:" and "Avgick:")
-      let departureTimeMatch = journeyText.match(/Avg(?:år|ick):\s*(\d{2}:\d{2})/);
-      
-      // For cancelled journeys, look for the pattern after "--:--" 
-      if (!departureTimeMatch) {
-        departureTimeMatch = journeyText.match(/--:--(\d{2}:\d{2})/);
-      }
-      
-      // Also check for standalone time pattern (like "13:14") - get the first valid time
-      if (!departureTimeMatch) {
-        const timeMatches = journeyText.match(/\b(\d{2}:\d{2})\b/g);
-        if (timeMatches && timeMatches.length > 0) {
-          // Find the first time that's not "--:--" 
-          for (const timeMatch of timeMatches) {
-            if (timeMatch !== '--:--') {
-              departureTimeMatch = [null, timeMatch];
-              break;
-            }
-          }
-        }
-      }
-      
-      if (!departureTimeMatch) {
-        console.log('Could not find departure time for cancelled journey:', journeyText.substring(0, 200));
-        console.log('Full journey text:', journeyText);
-        const allTimes = journeyText.match(/\d{2}:\d{2}/g);
-        console.log('All times found in text:', allTimes);
-        return;
-      }
-      
-      const departureTime = departureTimeMatch[1];
-      
-      // Calculate arrival time as departure + 13 minutes
-      const [hours, minutes] = departureTime.split(':').map(Number);
-      const departureMinutes = hours * 60 + minutes;
-      const arrivalMinutes = departureMinutes + 13;
-      
-      // Handle day boundary
-      const arrivalHours = Math.floor((arrivalMinutes % (24 * 60)) / 60);
-      const arrivalMins = arrivalMinutes % 60;
-      const cancelledArrival = `${arrivalHours.toString().padStart(2, '0')}:${arrivalMins.toString().padStart(2, '0')}`;
-      
-      // Find the next non-cancelled journey
-      let nextJourney = null;
-      let nextTime = null;
-      
-      for (let i = index + 1; i < allJourneys.length; i++) {
-        const nextJourneyCandidate = allJourneys[i];
-        const nextJourneyText = nextJourneyCandidate.textContent;
-        
-        // Skip buttons that are not journey items
-        if (!nextJourneyText.includes('Avgick:') && !nextJourneyText.includes('Avgår:') && 
-            !nextJourneyText.includes('Har passerat') && !nextJourneyText.includes('Inställd')) {
-          continue;
-        }
-        
-        const isNextCancelled = nextJourneyText.includes('Inställd') ||
-                                nextJourneyText.includes('tid saknas');
-        
-        if (!isNextCancelled) {
-          console.log(`Checking next journey candidate: ${nextJourneyText.substring(0, 100)}`);
-          // For delay calculation, we want the ARRIVAL time of next journey
-          // Look specifically for arrival time first, then departure as fallback
-          let nextTimeMatch = nextJourneyText.match(/Ankom(?:mer)?:\s*(\d{2}:\d{2})/);
-          if (!nextTimeMatch) {
-            // If no arrival time, look for departure and calculate arrival (+13 min)
-            const depMatch = nextJourneyText.match(/Avg(?:år|ick):\s*(\d{2}:\d{2})/);
-            if (depMatch) {
-              const depTime = depMatch[1];
-              const [hours, minutes] = depTime.split(':').map(Number);
-              const depMinutes = hours * 60 + minutes;
-              const arrMinutes = depMinutes + 13; // Add 13 minutes travel time
-              const arrHours = Math.floor((arrMinutes % (24 * 60)) / 60);
-              const arrMins = arrMinutes % 60;
-              const calculatedArrival = `${arrHours.toString().padStart(2, '0')}:${arrMins.toString().padStart(2, '0')}`;
-              nextTimeMatch = [null, calculatedArrival];
-              console.log(`Calculated next arrival from departure ${depTime} -> ${calculatedArrival}`);
-            }
-          }
-          
-          if (nextTimeMatch) {
-            console.log(`Found next journey time: ${nextTimeMatch[1]} from text: ${nextJourneyText.substring(0, 100)}`);
-            nextJourney = nextJourneyCandidate;
-            nextTime = nextTimeMatch[1];
+      // Store info about this cancelled journey
+      cancelledJourneys.push({
+        index: index,
+        journey: journey,
+        journeyText: journeyText
+      });
+    }
+  }
+  
+  // Now process each cancelled journey to find delays
+  for (const cancelledInfo of cancelledJourneys) {
+    const { index, journey, journeyText } = cancelledInfo;
+    
+    // Extract cancelled departure time and calculate arrival
+    // Look for departure time first (handle both "Avgår:" and "Avgick:")
+    let departureTimeMatch = journeyText.match(/Avg(?:år|ick):\s*(\d{2}:\d{2})/);
+    
+    // For cancelled journeys, look for the pattern after "--:--" 
+    if (!departureTimeMatch) {
+      departureTimeMatch = journeyText.match(/--:--(\d{2}:\d{2})/);
+    }
+    
+    // Also check for standalone time pattern (like "13:14") - get the first valid time
+    if (!departureTimeMatch) {
+      const timeMatches = journeyText.match(/\b(\d{2}:\d{2})\b/g);
+      if (timeMatches && timeMatches.length > 0) {
+        // Find the first time that's not "--:--" 
+        for (const timeMatch of timeMatches) {
+          if (timeMatch !== '--:--') {
+            departureTimeMatch = [null, timeMatch];
             break;
           }
         }
       }
+    }
+    
+    if (!departureTimeMatch) {
+      console.log('Could not find departure time for cancelled journey:', journeyText.substring(0, 200));
+      console.log('Full journey text:', journeyText);
+      const allTimes = journeyText.match(/\d{2}:\d{2}/g);
+      console.log('All times found in text:', allTimes);
+      continue;
+    }
+    
+    const departureTime = departureTimeMatch[1];
+    
+    // Calculate arrival time as departure + 13 minutes
+    const [hours, minutes] = departureTime.split(':').map(Number);
+    const departureMinutes = hours * 60 + minutes;
+    const arrivalMinutes = departureMinutes + 13;
+    
+    // Handle day boundary
+    const arrivalHours = Math.floor((arrivalMinutes % (24 * 60)) / 60);
+    const arrivalMins = arrivalMinutes % 60;
+    const cancelledArrival = `${arrivalHours.toString().padStart(2, '0')}:${arrivalMins.toString().padStart(2, '0')}`;
+    
+    // Find the next non-cancelled journey
+    let nextJourney = null;
+    let nextTime = null;
+    
+    for (let i = index + 1; i < allJourneys.length; i++) {
+      const nextJourneyCandidate = allJourneys[i];
+      const nextJourneyText = nextJourneyCandidate.textContent;
       
-      if (!nextTime) {
-        console.log('No next non-cancelled journey found with valid time');
-        return;
+      // Skip buttons that are not journey items
+      if (!nextJourneyText.includes('Avgick:') && !nextJourneyText.includes('Avgår:') && 
+          !nextJourneyText.includes('Har passerat') && !nextJourneyText.includes('Inställd')) {
+        continue;
       }
       
-      // Calculate delay
-      const delay = calculateDelay(cancelledArrival, nextTime);
-      console.log(`DELAY CALCULATION DEBUG:`);
-      console.log(`- Cancelled departure: ${departureTime}`);
-      console.log(`- Cancelled expected arrival: ${cancelledArrival}`);
-      console.log(`- Next journey time: ${nextTime}`);
-      console.log(`- Calculated delay: ${delay} minutes`);
-      console.log(`- Cancelled arrival minutes: ${parseTime(cancelledArrival)}`);
-      console.log(`- Next time minutes: ${parseTime(nextTime)}`);
-      console.log(`- Raw difference: ${parseTime(nextTime) - parseTime(cancelledArrival)} minutes`);
+      // Check if this next journey is also cancelled
+      const isNextCancelled = checkIfJourneyCancelled(nextJourneyCandidate, nextJourneyText);
       
-      // Add button if delay is 20 minutes or more
-      if (delay >= 20) {
-        // Extract station information and date from journey text
-        const journeyInfo = {
-          departureTime: departureTime,
-          delay: delay,
-          fromStation: extractFromStation(journeyText),
-          toStation: extractToStation(journeyText),
-          date: extractJourneyDate()
-        };
+      if (!isNextCancelled) {
+        console.log(`Checking next journey candidate: ${nextJourneyText.substring(0, 100)}`);
+        // For delay calculation, we want the ARRIVAL time of next journey
+        // Look specifically for arrival time first, then departure as fallback
+        let nextTimeMatch = nextJourneyText.match(/Ankom(?:mer)?:\s*(\d{2}:\d{2})/);
+        if (!nextTimeMatch) {
+          // If no arrival time, look for departure and calculate arrival (+13 min)
+          const depMatch = nextJourneyText.match(/Avg(?:år|ick):\s*(\d{2}:\d{2})/);
+          if (depMatch) {
+            const depTime = depMatch[1];
+            const [hours, minutes] = depTime.split(':').map(Number);
+            const depMinutes = hours * 60 + minutes;
+            const arrMinutes = depMinutes + 13; // Add 13 minutes travel time
+            const arrHours = Math.floor((arrMinutes % (24 * 60)) / 60);
+            const arrMins = arrMinutes % 60;
+            const calculatedArrival = `${arrHours.toString().padStart(2, '0')}:${arrMins.toString().padStart(2, '0')}`;
+            nextTimeMatch = [null, calculatedArrival];
+            console.log(`Calculated next arrival from departure ${depTime} -> ${calculatedArrival}`);
+          }
+        }
         
-        addDelayButton(journey, journeyInfo);
+        if (nextTimeMatch) {
+          console.log(`Found next journey time: ${nextTimeMatch[1]} from text: ${nextJourneyText.substring(0, 100)}`);
+          nextJourney = nextJourneyCandidate;
+          nextTime = nextTimeMatch[1];
+          break;
+        }
       }
     }
-  });
+    
+    if (!nextTime) {
+      console.log('No next non-cancelled journey found with valid time');
+      continue;
+    }
+    
+    // Calculate delay
+    const delay = calculateDelay(cancelledArrival, nextTime);
+    console.log(`DELAY CALCULATION DEBUG:`);
+    console.log(`- Cancelled departure: ${departureTime}`);
+    console.log(`- Cancelled expected arrival: ${cancelledArrival}`);
+    console.log(`- Next journey time: ${nextTime}`);
+    console.log(`- Calculated delay: ${delay} minutes`);
+    console.log(`- Cancelled arrival minutes: ${parseTime(cancelledArrival)}`);
+    console.log(`- Next time minutes: ${parseTime(nextTime)}`);
+    console.log(`- Raw difference: ${parseTime(nextTime) - parseTime(cancelledArrival)} minutes`);
+    
+    // Add button if delay is 20 minutes or more
+    if (delay >= 20) {
+      // Extract station information and date from journey text
+      const journeyInfo = {
+        departureTime: departureTime,
+        delay: delay,
+        fromStation: extractFromStation(journeyText),
+        toStation: extractToStation(journeyText),
+        date: extractJourneyDate()
+      };
+      
+      addDelayButton(journey, journeyInfo);
+    }
+  }
 }
 
 // Function to add delay compensation button
