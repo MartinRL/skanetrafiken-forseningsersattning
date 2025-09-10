@@ -756,7 +756,7 @@ function fillErsattningStep2() {
     
     // Step 5: Click "Sök resa" button after a delay
     setTimeout(() => {
-      const searchBtn = document.querySelector('button[onclick*="sök"], button:contains("Sök resa")') ||
+      const searchBtn = document.querySelector('button[onclick*="sök"]') ||
                        Array.from(document.querySelectorAll('button')).find(btn => 
                          btn.textContent.toLowerCase().includes('sök resa'));
       
