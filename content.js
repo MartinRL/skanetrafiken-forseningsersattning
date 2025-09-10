@@ -104,12 +104,8 @@ function checkIfJourneyCancelled(journey, journeyText) {
     return true;
   }
   
-  // Check if journey has warning annotation (red triangle) - assume these are cancellations
-  // This is a heuristic approach - journeys with red warning triangles are likely cancelled
-  if (journeyText.includes('Den här resan har en anmärkning')) {
-    console.log('Journey has red warning triangle - assuming cancelled');
-    return true;
-  }
+  // Only treat journeys as cancelled if they explicitly show "Inställd" text
+  // Remarks/annotations ("Den här resan har en anmärkning") can indicate delays, track changes, etc - not just cancellations
   
   return false;
 }
