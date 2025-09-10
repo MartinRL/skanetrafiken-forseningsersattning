@@ -1,4 +1,4 @@
-console.log('🚀 Skånetrafiken extension loaded');
+console.log('🚀 Skånetrafiken extension loaded - v2.1.0 (delay fix)');
 
 // Function to parse time string (HH:MM format)
 function parseTime(timeStr) {
@@ -193,7 +193,7 @@ function processCancelledRides() {
     const journeyText = journey.textContent;
     
     // Debug: Log every journey we're checking
-    console.log(`Journey ${index}:`, journeyText.substring(0, 150));
+    console.log(`📋 Journey ${index}:`, journeyText.substring(0, 200));
     
     if (!journeyText.includes('Avgick:') && !journeyText.includes('Avgår:') && 
         !journeyText.includes('Har passerat') && !journeyText.includes('Inställd') &&
@@ -211,16 +211,20 @@ function processCancelledRides() {
     
     // Check if this journey is cancelled
     const isCancelled = checkIfJourneyCancelled(journey, journeyText);
-    console.log(`Journey ${index} cancelled: ${isCancelled}`);
+    console.log(`🔍 Journey ${index} cancelled: ${isCancelled}`);
     
     // Check if this journey is delayed (but not cancelled)
     let delayMinutes = 0;
     if (!isCancelled) {
       delayMinutes = checkIfJourneyDelayed(journey, journeyText);
-      console.log(`Journey ${index} delay: ${delayMinutes} minutes`);
+      console.log(`⏰ Journey ${index} delay: ${delayMinutes} minutes`);
     }
     
-    if (isCancelled || delayMinutes >= 20) {
+    // DEBUG: Show the decision logic
+    const shouldAddButton = isCancelled || delayMinutes >= 20;
+    console.log(`🎯 Journey ${index} decision: cancelled=${isCancelled}, delay=${delayMinutes}min, addButton=${shouldAddButton}`);
+    
+    if (shouldAddButton) {
       console.log(`Found problematic journey ${index}: ${isCancelled ? 'cancelled' : delayMinutes + ' min delayed'}`, journey.textContent.substring(0, 100));
       
       // Skip if this is just a simple "Inställd" text without time info
