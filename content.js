@@ -371,17 +371,18 @@ function processCancelledRides() {
       console.log(`- Delay: ${finalDelay} minutes`);
     }
     
-    // Add button if delay is 20 minutes or more
-    if (finalDelay >= 20) {
+    // Add button if delay is 20+ minutes OR if journey is cancelled
+    if (finalDelay >= 20 || cancelled) {
       // Extract station information and date from journey text
       const journeyInfo = {
         departureTime: departureTime,
-        delay: finalDelay,
+        delay: cancelled ? 'Inställd' : finalDelay, // Show "Inställd" for cancelled journeys
         fromStation: extractFromStation(journeyText),
         toStation: extractToStation(journeyText),
         date: extractJourneyDate()
       };
-      
+
+      console.log(`🔧 Adding ersättning button for journey: cancelled=${cancelled}, delay=${finalDelay}min`);
       addDelayButton(journey, journeyInfo);
     }
   }
@@ -389,10 +390,18 @@ function processCancelledRides() {
 
 // Function to add delay compensation button
 function addDelayButton(journeyElement, journeyInfo) {
+  console.log('🔧 Creating delay button for journey:', journeyInfo);
   const button = document.createElement('button');
   button.className = 'delay-compensation-btn';
-  button.textContent = `Ersättning (${journeyInfo.delay} min försening)`;
-  button.title = `Klicka för att ansöka om ersättning för ${journeyInfo.delay} minuters försening`;
+
+  // Different text for cancelled vs delayed journeys
+  if (journeyInfo.delay === 'Inställd') {
+    button.textContent = `Ersättning (Inställd)`;
+    button.title = `Klicka för att ansöka om ersättning för inställd resa`;
+  } else {
+    button.textContent = `Ersättning (${journeyInfo.delay} min försening)`;
+    button.title = `Klicka för att ansöka om ersättning för ${journeyInfo.delay} minuters försening`;
+  }
   
   button.addEventListener('click', (e) => {
     e.stopPropagation();
