@@ -243,9 +243,11 @@ function processCancelledRides() {
     }
   }
   
-  // Now process each problematic journey 
+  // Now process each problematic journey
   for (const journeyInfo of problematicJourneys) {
+    console.log('🔍 Processing journeyInfo:', journeyInfo);
     const { index, journey, journeyText, isCancelled, delayMinutes } = journeyInfo;
+    console.log('🔍 Destructured isCancelled:', isCancelled);
     
     let finalDelay = 0;
     let departureTime = '';
@@ -372,8 +374,10 @@ function processCancelledRides() {
     }
     
     // Add button if delay is 20+ minutes OR if journey is cancelled
+    console.log('🔍 About to check button condition. isCancelled:', isCancelled, 'finalDelay:', finalDelay);
     if (finalDelay >= 20 || isCancelled) {
       // Extract station information and date from journey text
+      console.log('🔍 Creating journeyInfo object. isCancelled:', isCancelled);
       const journeyInfo = {
         departureTime: departureTime,
         delay: isCancelled ? 'Inställd' : finalDelay, // Show "Inställd" for cancelled journeys
@@ -381,6 +385,7 @@ function processCancelledRides() {
         toStation: extractToStation(journeyText),
         date: extractJourneyDate()
       };
+      console.log('🔍 Created journeyInfo:', journeyInfo);
 
       console.log(`🔧 Adding ersättning button for journey: cancelled=${isCancelled}, delay=${finalDelay}min`);
       addDelayButton(journey, journeyInfo);
