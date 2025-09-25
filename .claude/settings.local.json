@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__browsermcp__browser_screenshot",
+      "mcp__browsermcp__browser_get_console_logs",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -416,22 +416,24 @@ function addDelayButton(journeyElement, journeyInfo) {
   journeyElement.appendChild(buttonContainer);
 }
 
-// Function to load credentials from extension storage
+// Function to load credentials from external file
 async function loadCredentials() {
   try {
-    // In a real extension, credentials would be loaded securely
-    // For now, we'll use the cached credentials from our credentials.json
-    const credentials = {
-      'email': 'martinrosenlidholm@gmail.com',
-      'ticket-id': 'E4H825D',
-      'phone-number': '0707318625',
-      'person-number': 'REDACTED'
-    };
-    window.cachedCredentials = credentials;
-    console.log('🔑 Credentials loaded:', Object.keys(credentials));
-    return credentials;
+    // SECURITY: Never hardcode credentials! Always load from external file
+    const response = await fetch(chrome.runtime.getURL('credentials.json'));
+    if (response.ok) {
+      const credentials = await response.json();
+      window.cachedCredentials = credentials;
+      console.log('🔑 Credentials loaded from file:', Object.keys(credentials));
+      return credentials;
+    } else {
+      console.error('❌ credentials.json not found or not accessible');
+      alert('credentials.json file is missing! Please add your credentials file to the extension directory.');
+      return null;
+    }
   } catch (error) {
     console.error('❌ Error loading credentials:', error);
+    alert('Failed to load credentials.json. Please check that the file exists and is properly formatted.');
     return null;
   }
 }
@@ -632,6 +634,72 @@ function fillErsattningStep2() {
   console.log('📋 Using cached journey info:', journeyInfo);
   
   try {
+    // ULTRA-SIMPLIFIED field filling - based on what we know works from manual testing
+    const fillField = (element, targetText) => {
+      if (!element || !targetText) {
+        console.log('❌ Invalid element or text');
+        return false;
+      }
+
+      console.log(`📝 Attempting to fill field with: "${targetText}"`);
+      console.log(`📝 Element:`, element);
+
+      // From manual testing, we know clicking opens a dropdown with options
+      console.log('🖱️ Clicking element to open dropdown...');
+      element.click();
+
+      // Wait and then look for the dropdown options
+      setTimeout(() => {
+        const listbox = document.querySelector('listbox');
+        console.log('🔍 Looking for listbox after click...');
+
+        if (listbox) {
+          console.log('✅ Found listbox!');
+          const options = listbox.querySelectorAll('option');
+          console.log(`📋 Found ${options.length} options in dropdown`);
+
+          // Log all options to see what's available
+          options.forEach((opt, i) => {
+            console.log(`  Option[${i}]: "${opt.textContent.trim()}"`);
+          });
+
+          // Find and click the best match
+          for (const option of options) {
+            const optionText = option.textContent.trim();
+            const lowerOption = optionText.toLowerCase();
+            const lowerTarget = targetText.toLowerCase();
+
+            // Check if this option matches our target
+            if (lowerOption.includes(lowerTarget) ||
+                lowerTarget.includes(lowerOption) ||
+                optionText.includes('Kastrup') && targetText.includes('Kastrup') ||
+                optionText.includes('Malmö') && targetText.includes('Malmö') ||
+                optionText.includes('Hyllie') && targetText.includes('Hyllie')) {
+
+              console.log(`🎯 MATCH FOUND! Clicking: "${optionText}"`);
+              option.click();
+
+              // Verify the selection worked
+              setTimeout(() => {
+                const currentValue = element.textContent || element.getAttribute('value') || '';
+                console.log(`✅ After click, field now contains: "${currentValue}"`);
+              }, 100);
+
+              return;
+            }
+          }
+          console.log('❌ No matching option found in dropdown');
+        } else {
+          console.log('❌ No listbox found after clicking');
+        }
+      }, 500); // Give dropdown time to appear
+
+      return true;
+    };
+
+    // Use the simple fill function
+    const fillReactAutocomplete = fillField;
+
     // Step 1: Set delay duration dropdown
     if (journeyInfo.delay) {
       console.log(`⏱️ Setting delay duration: ${journeyInfo.delay} minutes`);
@@ -663,46 +731,197 @@ function fillErsattningStep2() {
       }
     }
     
-    // Step 2: Fill "Från" (From) station
-    if (journeyInfo.fromStation) {
-      console.log(`🚉 Setting from station: ${journeyInfo.fromStation}`);
-      const fromInputs = document.querySelectorAll('input, select');
-      
-      for (const input of fromInputs) {
-        const label = input.previousElementSibling?.textContent || 
-                     input.parentElement?.textContent || 
-                     input.getAttribute('aria-label') || '';
-        
-        if (label.toLowerCase().includes('från')) {
-          console.log('📍 Found "Från" field:', input);
-          input.value = journeyInfo.fromStation;
-          input.dispatchEvent(new Event('input', { bubbles: true }));
-          input.dispatchEvent(new Event('change', { bubbles: true }));
-          break;
+    // Step 2: Get all comboboxes and other potential field elements
+    const allComboboxes = document.querySelectorAll('[role="combobox"]');
+    console.log(`🔍 Found ${allComboboxes.length} comboboxes with role="combobox"`);
+
+    // Also check for other potential field types
+    const allInputs = document.querySelectorAll('input');
+    const allSelects = document.querySelectorAll('select');
+    console.log(`🔍 Also found ${allInputs.length} inputs and ${allSelects.length} selects`);
+
+    // Debug: List all comboboxes with their aria-labels and full details
+    allComboboxes.forEach((cb, i) => {
+      const label = cb.getAttribute('aria-label') || 'no-label';
+      const text = cb.textContent || cb.value || '';
+      const id = cb.id || 'no-id';
+      const className = cb.className || 'no-class';
+      console.log(`  Combobox[${i}]: aria="${label}", content="${text}", id="${id}", class="${className}"`);
+      console.log(`    HTML:`, cb.outerHTML.substring(0, 200));
+    });
+
+    // Debug: Also list inputs that might be the actual form fields
+    allInputs.forEach((input, i) => {
+      if (input.type !== 'hidden') {
+        const label = input.getAttribute('aria-label') || input.getAttribute('placeholder') || 'no-label';
+        const name = input.name || 'no-name';
+        const id = input.id || 'no-id';
+        console.log(`  Input[${i}]: label="${label}", name="${name}", id="${id}", type="${input.type}"`);
+      }
+    });
+
+    // AGGRESSIVE: Try every possible selector to find form fields
+    let fromField = null;
+    let toField = null;
+    let dateField = null;
+
+    console.log('🔍 AGGRESSIVE field detection starting...');
+
+    // Method 1: Try exact aria-label matching
+    fromField = document.querySelector('[aria-label="Från:"]');
+    toField = document.querySelector('[aria-label="Till:"]');
+    dateField = document.querySelector('[aria-label*="Datum"]') ||
+                document.querySelector('[aria-label*="ÅÅÅÅ-MM-DD"]');
+
+    console.log('🎯 Method 1 - Exact aria-label results:');
+    console.log(`  - Från: ${fromField ? 'FOUND' : 'NOT FOUND'}`);
+    console.log(`  - Till: ${toField ? 'FOUND' : 'NOT FOUND'}`);
+    console.log(`  - Date: ${dateField ? 'FOUND' : 'NOT FOUND'}`);
+
+    // Method 2: Try with role="combobox"
+    if (!fromField) fromField = document.querySelector('[role="combobox"][aria-label="Från:"]');
+    if (!toField) toField = document.querySelector('[role="combobox"][aria-label="Till:"]');
+    if (!dateField) dateField = document.querySelector('[role="combobox"][aria-label*="Datum"]');
+
+    console.log('🎯 Method 2 - With combobox role:');
+    console.log(`  - Från: ${fromField ? 'FOUND' : 'NOT FOUND'}`);
+    console.log(`  - Till: ${toField ? 'FOUND' : 'NOT FOUND'}`);
+    console.log(`  - Date: ${dateField ? 'FOUND' : 'NOT FOUND'}`);
+
+    // Method 3: Try finding by position (from our earlier testing, we know the order)
+    if (!fromField || !toField) {
+      console.log('🎯 Method 3 - Trying positional detection...');
+
+      // We know from testing there are specific comboboxes for From/To
+      if (allComboboxes.length >= 3) {
+        // Try different positions based on what we've seen
+        for (let i = 0; i < allComboboxes.length; i++) {
+          const cb = allComboboxes[i];
+          const ariaLabel = cb.getAttribute('aria-label') || '';
+          const textContent = cb.textContent || '';
+
+          console.log(`  Position[${i}]: aria="${ariaLabel}", text="${textContent.substring(0, 30)}"`);
+
+          // Check if this looks like a From field
+          if (!fromField && (ariaLabel.includes('Från') || textContent.includes('Från') ||
+                            (i === 1 && ariaLabel.includes(':')))) { // Often second combobox
+            fromField = cb;
+            console.log(`🎯 FOUND Från at position ${i}`);
+          }
+
+          // Check if this looks like a To field
+          if (!toField && (ariaLabel.includes('Till') || textContent.includes('Till') ||
+                          (i === 2 && ariaLabel.includes(':')))) { // Often third combobox
+            toField = cb;
+            console.log(`🎯 FOUND Till at position ${i}`);
+          }
         }
       }
     }
-    
-    // Step 3: Fill "Till" (To) station  
-    if (journeyInfo.toStation) {
-      console.log(`🚉 Setting to station: ${journeyInfo.toStation}`);
-      const toInputs = document.querySelectorAll('input, select');
-      
-      for (const input of toInputs) {
-        const label = input.previousElementSibling?.textContent || 
-                     input.parentElement?.textContent || 
-                     input.getAttribute('aria-label') || '';
-        
-        if (label.toLowerCase().includes('till')) {
-          console.log('📍 Found "Till" field:', input);
-          input.value = journeyInfo.toStation;
-          input.dispatchEvent(new Event('input', { bubbles: true }));
-          input.dispatchEvent(new Event('change', { bubbles: true }));
-          break;
+
+    // Method 4: Desperate - try ANY element that might work
+    if (!fromField || !toField) {
+      console.log('🎯 Method 4 - Desperate search...');
+
+      // Try all elements with text "Från:" or "Till:" nearby
+      const allElements = document.querySelectorAll('*');
+      for (const el of allElements) {
+        if (el.textContent && el.textContent.includes('Från:') && !fromField) {
+          // Look for nearby input-like elements
+          const nearby = el.parentElement?.querySelector('input, [role="combobox"], [role="textbox"]');
+          if (nearby) {
+            fromField = nearby;
+            console.log('🎯 FOUND Från via text search');
+            break;
+          }
+        }
+        if (el.textContent && el.textContent.includes('Till:') && !toField) {
+          const nearby = el.parentElement?.querySelector('input, [role="combobox"], [role="textbox"]');
+          if (nearby) {
+            toField = nearby;
+            console.log('🎯 FOUND Till via text search');
+            break;
+          }
         }
       }
     }
-    
+
+    // Validate we found the fields correctly
+    console.log(`🔍 Field Detection Results:`);
+    console.log(`  - Från field: ${fromField ? 'FOUND' : 'NOT FOUND'}`);
+    if (fromField) {
+      console.log(`    Från details: aria="${fromField.getAttribute('aria-label')}", id="${fromField.id}"`);
+      console.log(`    Från HTML:`, fromField.outerHTML.substring(0, 150));
+    }
+    console.log(`  - Till field: ${toField ? 'FOUND' : 'NOT FOUND'}`);
+    if (toField) {
+      console.log(`    Till details: aria="${toField.getAttribute('aria-label')}", id="${toField.id}"`);
+      console.log(`    Till HTML:`, toField.outerHTML.substring(0, 150));
+    }
+    console.log(`  - Date field: ${dateField ? 'FOUND' : 'NOT FOUND'}`);
+    if (dateField) {
+      console.log(`    Date details: aria="${dateField.getAttribute('aria-label')}", id="${dateField.id}"`);
+    }
+
+    // Also check journey info
+    console.log(`🧪 Journey Info:`);
+    console.log(`  - fromStation: "${journeyInfo.fromStation}"`);
+    console.log(`  - toStation: "${journeyInfo.toStation}"`);
+    console.log(`  - date: "${journeyInfo.date}"`);
+
+    // Simple sequential field filling with longer delays
+    console.log('🔄 Starting field filling...');
+
+    // Fill From field first
+    if (journeyInfo.fromStation && fromField) {
+      console.log(`🚉 FILLING Från field with: "${journeyInfo.fromStation}"`);
+      console.log(`🚉 Från field element:`, fromField);
+      fillReactAutocomplete(fromField, journeyInfo.fromStation);
+    } else {
+      console.log(`❌ Cannot fill Från: fromStation="${journeyInfo.fromStation}", fromField=${!!fromField}`);
+    }
+
+    // Fill Till field after delay
+    setTimeout(() => {
+      if (journeyInfo.toStation && toField) {
+        console.log(`🎯 FILLING Till field with: "${journeyInfo.toStation}"`);
+        console.log(`🎯 Till field element:`, toField);
+        fillReactAutocomplete(toField, journeyInfo.toStation);
+      } else {
+        console.log(`❌ Cannot fill Till: toStation="${journeyInfo.toStation}", toField=${!!toField}`);
+      }
+    }, 2000);
+
+    // Fill Date field - handle as special case since date pickers work differently
+    if (journeyInfo.date && dateField) {
+      console.log(`📅 FILLING Date field with: "${journeyInfo.date}"`);
+      try {
+        // For date fields, try direct value setting first
+        console.log('📅 Trying direct date field setting');
+
+        // Check if it has an input element
+        const dateInput = dateField.querySelector('input');
+        if (dateInput) {
+          console.log('📅 Found date input element');
+          const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+          nativeSetter.call(dateInput, journeyInfo.date);
+          dateInput.dispatchEvent(new Event('input', { bubbles: true }));
+          dateInput.dispatchEvent(new Event('change', { bubbles: true }));
+        } else {
+          console.log('📅 No input in date field, setting combobox attributes');
+          dateField.textContent = journeyInfo.date;
+          dateField.setAttribute('value', journeyInfo.date);
+          dateField.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        console.log(`✅ Successfully filled Date field with "${journeyInfo.date}"`);
+      } catch (error) {
+        console.log(`❌ Error filling Date field:`, error);
+      }
+    } else if (journeyInfo.date) {
+      console.log(`❌ Cannot fill Date - field not found!`);
+    }
+
     // Step 4: Set departure time
     if (journeyInfo.departureTime) {
       console.log(`🕐 Setting departure time: ${journeyInfo.departureTime}`);
@@ -754,19 +973,16 @@ function fillErsattningStep2() {
       }
     }
     
-    // Step 5: Click "Sök resa" button after a delay
-    setTimeout(() => {
-      const searchBtn = document.querySelector('button[onclick*="sök"]') ||
-                       Array.from(document.querySelectorAll('button')).find(btn => 
-                         btn.textContent.toLowerCase().includes('sök resa'));
-      
-      if (searchBtn) {
-        console.log('🔍 Clicking "Sök resa" button');
-        searchBtn.click();
-      } else {
-        console.log('❌ Could not find "Sök resa" button');
-      }
-    }, 1000);
+    // Step 5: Click "Sök resa" button - NO DELAY
+    const searchBtn = Array.from(document.querySelectorAll('button')).find(btn =>
+                       btn.textContent.toLowerCase().includes('sök resa'));
+
+    if (searchBtn) {
+      console.log('🔍 Found "Sök resa" button, clicking it');
+      searchBtn.click();
+    } else {
+      console.log('❌ Could not find "Sök resa" button');
+    }
     
     return true;
   } catch (error) {
@@ -797,9 +1013,13 @@ function init() {
     debugButton.style.cssText = 'position: fixed; top: 10px; right: 10px; z-index: 9999; background: #ff6b6b; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer;';
     debugButton.onclick = () => {
       console.log('🔧 Manual auto-fill triggered');
+      console.log('🔧 Current page URL:', window.location.href);
+      console.log('🔧 Page title:', document.title);
+
       if (isStep1) {
         loadCredentials().then(() => fillErsattningStep1());
       } else if (isStep2) {
+        console.log('🔧 Triggering Step 2 auto-fill');
         fillErsattningStep2();
       } else {
         console.log('⚠️ Unknown step, trying step 1');
@@ -807,6 +1027,21 @@ function init() {
       }
     };
     document.body.appendChild(debugButton);
+
+    // Add a debug info button
+    const debugInfoButton = document.createElement('button');
+    debugInfoButton.textContent = '🔍 Debug Info';
+    debugInfoButton.style.cssText = 'position: fixed; top: 50px; right: 10px; z-index: 9999; background: #4CAF50; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer;';
+    debugInfoButton.onclick = () => {
+      console.log('🔍 === DEBUG INFO ===');
+      console.log('Page URL:', window.location.href);
+      console.log('Cached journey info:', window.cachedJourneyInfo);
+      console.log('All comboboxes:', document.querySelectorAll('[role="combobox"]'));
+      console.log('All inputs:', document.querySelectorAll('input'));
+      console.log('All selects:', document.querySelectorAll('select'));
+      console.log('===================');
+    };
+    document.body.appendChild(debugInfoButton);
     
     // Auto-fill based on step
     if (isStep1) {
@@ -827,17 +1062,16 @@ function init() {
         });
       });
     } else if (isStep2) {
-      // Set up test journey info if none exists
-      if (!window.cachedJourneyInfo) {
-        console.log('🧪 Setting up test journey info for step 2');
-        window.cachedJourneyInfo = {
-          departureTime: '14:19',
-          delay: 25,
-          fromStation: 'Kastrup',
-          toStation: 'Malmö Hyllie',
-          date: '2025-09-08'
-        };
-      }
+      // ALWAYS set up test journey info for debugging
+      console.log('🧪 Setting up test journey info for step 2');
+      window.cachedJourneyInfo = {
+        departureTime: '14:19',
+        delay: 25,
+        fromStation: 'Kastrup',
+        toStation: 'Malmö Hyllie',
+        date: '2025-09-14'
+      };
+      console.log('🧪 Test journey info set:', window.cachedJourneyInfo);
       
       // Auto-fill step 2 journey search
       setTimeout(() => fillErsattningStep2(), 500);

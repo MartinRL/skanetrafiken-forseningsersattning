@@ -2,6 +2,26 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## CRITICAL SECURITY RULES
+
+### 🔴 NEVER HARDCODE CREDENTIALS
+**ABSOLUTELY CRITICAL**: NEVER hardcode any credentials, API keys, passwords, personal information, or sensitive data directly in the code. This includes:
+- Email addresses
+- Phone numbers
+- Personal identification numbers
+- Ticket IDs
+- API keys
+- Passwords
+- Any other personal or sensitive information
+
+**Why**: Credentials are stored in separate, non-version-controlled files (like `credentials.json`) for security reasons. Hardcoding them would expose sensitive data in the repository history.
+
+**Always**:
+- Load credentials from external configuration files
+- Ensure credential files are in `.gitignore`
+- Fail gracefully if credential files are missing
+- Alert users when credential files need to be created
+
 ## Project Overview
 
 This is a browser extension for Skånetrafiken that automatically detects cancelled rides with delays of 20+ minutes and adds compensation buttons to help users claim delay compensation.
