@@ -372,17 +372,17 @@ function processCancelledRides() {
     }
     
     // Add button if delay is 20+ minutes OR if journey is cancelled
-    if (finalDelay >= 20 || cancelled) {
+    if (finalDelay >= 20 || isCancelled) {
       // Extract station information and date from journey text
       const journeyInfo = {
         departureTime: departureTime,
-        delay: cancelled ? 'Inställd' : finalDelay, // Show "Inställd" for cancelled journeys
+        delay: isCancelled ? 'Inställd' : finalDelay, // Show "Inställd" for cancelled journeys
         fromStation: extractFromStation(journeyText),
         toStation: extractToStation(journeyText),
         date: extractJourneyDate()
       };
 
-      console.log(`🔧 Adding ersättning button for journey: cancelled=${cancelled}, delay=${finalDelay}min`);
+      console.log(`🔧 Adding ersättning button for journey: cancelled=${isCancelled}, delay=${finalDelay}min`);
       addDelayButton(journey, journeyInfo);
     }
   }
